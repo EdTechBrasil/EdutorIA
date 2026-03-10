@@ -52,7 +52,7 @@ function buildUser(decoded: any) {
   const email: string = decoded.email || "";
   const adminEmail = process.env.ADMIN_EMAIL || "";
 
-  const isAdmin = adminEmail && email === adminEmail;
+  const isAdmin = adminEmail && email.trim().toLowerCase() === adminEmail.trim().toLowerCase();
   const role = storage.roles[uid] ?? (isAdmin ? "admin" : "user");
   if (isAdmin) storage.roles[uid] = "admin"; // always keep admin
 
