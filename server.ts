@@ -17,9 +17,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(
-      (await import("express")).default.static(path.join(__dirname, "dist"))
-    );
+    const { default: express } = await import("express");
+    app.use(express.static(path.join(__dirname, "dist")));
     app.get("*", (_req: any, res: any) => {
       res.sendFile(path.join(__dirname, "dist", "index.html"));
     });
