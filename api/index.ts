@@ -1,27 +1,170 @@
 import express from "express";
 import cors from "cors";
-import admin from "firebase-admin";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && privateKey) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey,
-      }),
-    });
-  }
+const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "edutoria-41b14";
+const FS_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+// ─── Firebase JWT Verification ────────────────────────────────────────────────
+
+const JWKS = createRemoteJWKSet(
+  new URL("https://www.googleapis.com/robot/v1/metadata/jwk/securetoken@system.gserviceaccount.com")
+);
+
+async function verifyFirebaseToken(idToken: string) {
+  const { payload } = await jwtVerify(idToken, JWKS, {
+    issuer: `https://securetoken.google.com/${PROJECT_ID}`,
+    audience: PROJECT_ID,
+  });
+  return {
+    uid: payload.sub!,
+    email: payload["email"] as string | undefined,
+    name: payload["name"] as string | undefined,
+    picture: payload["picture"] as string | undefined,
+  };
 }
 
-const db = getFirestore();
+// ─── Firestore REST Helpers ───────────────────────────────────────────────────
+
+function toFsVal(v: any): any {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "object") return { mapValue: { fields: toFsFields(v) } };
+  return { stringValue: String(v) };
+}
+
+function toFsFields(obj: Record<string, any>) {
+  const fields: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) fields[k] = toFsVal(v);
+  }
+  return fields;
+}
+
+function fromFsVal(v: any): any {
+  if ("nullValue" in v) return null;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return parseInt(v.integerValue);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("stringValue" in v) return v.stringValue;
+  if ("mapValue" in v) return fromFsFields(v.mapValue?.fields || {});
+  if ("arrayValue" in v) return (v.arrayValue?.values || []).map(fromFsVal);
+  return null;
+}
+
+function fromFsFields(fields: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [k, v] of Object.entries(fields)) result[k] = fromFsVal(v);
+  return result;
+}
+
+function docId(name: string) {
+  return name.split("/").pop()!;
+}
+
+async function fsGet(col: string, id: string, token: string) {
+  const res = await fetch(`${FS_BASE}/${col}/${id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Firestore GET ${res.status}: ${await res.text()}`);
+  const doc = await res.json() as any;
+  return fromFsFields(doc.fields || {});
+}
+
+async function fsSet(col: string, id: string, data: Record<string, any>, token: string) {
+  const res = await fetch(`${FS_BASE}/${col}/${id}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFsFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore SET ${res.status}: ${await res.text()}`);
+}
+
+async function fsUpdate(col: string, id: string, data: Record<string, any>, token: string) {
+  const mask = Object.keys(data).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+  const res = await fetch(`${FS_BASE}/${col}/${id}?${mask}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFsFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore UPDATE ${res.status}: ${await res.text()}`);
+}
+
+async function fsAdd(col: string, data: Record<string, any>, token: string) {
+  const res = await fetch(`${FS_BASE}/${col}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: toFsFields(data) }),
+  });
+  if (!res.ok) throw new Error(`Firestore ADD ${res.status}: ${await res.text()}`);
+  const doc = await res.json() as any;
+  return docId(doc.name);
+}
+
+async function fsDelete(col: string, id: string, token: string) {
+  const res = await fetch(`${FS_BASE}/${col}/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Firestore DELETE ${res.status}`);
+}
+
+async function fsQuery(col: string, where: { field: string; value: any } | null, token: string) {
+  const query: any = { structuredQuery: { from: [{ collectionId: col }] } };
+  if (where) {
+    query.structuredQuery.where = {
+      fieldFilter: {
+        field: { fieldPath: where.field },
+        op: "EQUAL",
+        value: toFsVal(where.value),
+      },
+    };
+  }
+  const res = await fetch(`${FS_BASE}:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(query),
+  });
+  if (!res.ok) throw new Error(`Firestore QUERY ${res.status}: ${await res.text()}`);
+  const results = await res.json() as any[];
+  return results
+    .filter(r => r.document)
+    .map(r => ({ id: docId(r.document.name), ...fromFsFields(r.document.fields || {}) }));
+}
+
+async function fsList(col: string, token: string) {
+  const res = await fetch(`${FS_BASE}/${col}?pageSize=500`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Firestore LIST ${res.status}`);
+  const data = await res.json() as any;
+  return (data.documents || []).map((d: any) => ({ id: docId(d.name), ...fromFsFields(d.fields || {}) }));
+}
+
+async function fsIncrement(col: string, id: string, field: string, delta: number, token: string) {
+  const docPath = `projects/${PROJECT_ID}/databases/(default)/documents/${col}/${id}`;
+  const res = await fetch(`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:commit`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      writes: [{
+        transform: {
+          document: docPath,
+          fieldTransforms: [{ fieldPath: field, increment: { integerValue: String(delta) } }],
+        },
+      }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Firestore INCREMENT ${res.status}: ${await res.text()}`);
+}
+
+// ─── App Setup ────────────────────────────────────────────────────────────────
 
 const app = express();
 
-// In-memory storage only for agents (persisted via Vercel env vars)
 const storage = {
   agents: {
     ebook: process.env.TESS_AGENT_EBOOK || "",
@@ -36,61 +179,45 @@ app.use(express.json());
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function decodeToken(token: string) {
-  if (admin.apps.length) {
-    return await admin.auth().verifyIdToken(token);
-  }
-  // Dev fallback (no firebase-admin configured)
-  const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
-  return { uid: payload.user_id || payload.sub, email: payload.email, name: payload.name, picture: payload.picture };
-}
-
-async function buildUser(uid: string, profile?: { email: string; displayName: string | null; photoURL: string | null }) {
+async function buildUser(uid: string, profile: { email: string; displayName: string | null; photoURL: string | null }, token: string) {
   const adminEmail = process.env.ADMIN_EMAIL || "";
-  const ref = db.collection("users").doc(uid);
-  const snap = await ref.get();
+  const existing = await fsGet("users", uid, token);
 
-  if (!snap.exists) {
-    const isAdmin = adminEmail && (profile?.email || "").trim().toLowerCase() === adminEmail.trim().toLowerCase();
+  if (!existing) {
+    const isAdmin = adminEmail && (profile.email || "").trim().toLowerCase() === adminEmail.trim().toLowerCase();
     const data = {
-      email: profile?.email || "",
-      displayName: profile?.displayName || null,
-      photoURL: profile?.photoURL || null,
+      email: profile.email || "",
+      displayName: profile.displayName || null,
+      photoURL: profile.photoURL || null,
       credits: 10,
       role: isAdmin ? "admin" : "user",
       blocked: false,
     };
-    await ref.set(data);
+    await fsSet("users", uid, data, token);
     return { uid, ...data };
   }
 
-  const data = snap.data()!;
+  const updates: Record<string, any> = {};
+  if (profile.email && profile.email !== existing.email) updates.email = profile.email;
+  if (profile.displayName !== undefined && profile.displayName !== existing.displayName) updates.displayName = profile.displayName;
+  if (profile.photoURL !== undefined && profile.photoURL !== existing.photoURL) updates.photoURL = profile.photoURL;
 
-  // Update profile fields if provided
-  if (profile) {
-    const updates: Record<string, any> = {};
-    if (profile.email && profile.email !== data.email) updates.email = profile.email;
-    if (profile.displayName !== undefined && profile.displayName !== data.displayName) updates.displayName = profile.displayName;
-    if (profile.photoURL !== undefined && profile.photoURL !== data.photoURL) updates.photoURL = profile.photoURL;
+  const isAdmin = adminEmail && (profile.email || "").trim().toLowerCase() === adminEmail.trim().toLowerCase();
+  if (isAdmin && existing.role !== "admin") updates.role = "admin";
 
-    // Promote to admin if email matches
-    const isAdmin = adminEmail && (profile.email || "").trim().toLowerCase() === adminEmail.trim().toLowerCase();
-    if (isAdmin && data.role !== "admin") updates.role = "admin";
-
-    if (Object.keys(updates).length > 0) {
-      await ref.update(updates);
-      Object.assign(data, updates);
-    }
+  if (Object.keys(updates).length > 0) {
+    await fsUpdate("users", uid, updates, token);
+    Object.assign(existing, updates);
   }
 
   return {
     uid,
-    email: data.email || "",
-    displayName: data.displayName || null,
-    photoURL: data.photoURL || null,
-    credits: data.credits ?? 10,
-    role: data.role || "user",
-    blocked: data.blocked ?? false,
+    email: existing.email || "",
+    displayName: existing.displayName || null,
+    photoURL: existing.photoURL || null,
+    credits: existing.credits ?? 10,
+    role: existing.role || "user",
+    blocked: existing.blocked ?? false,
   };
 }
 
@@ -98,16 +225,16 @@ async function buildUser(uid: string, profile?: { email: string; displayName: st
 
 const requireAuth = async (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  if (!authHeader?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" });
   try {
-    const decoded = await decodeToken(authHeader.slice(7));
+    const token = authHeader.slice(7);
+    const decoded = await verifyFirebaseToken(token);
+    req.token = token;
     req.user = await buildUser(decoded.uid, {
       email: decoded.email || "",
       displayName: decoded.name || null,
       photoURL: decoded.picture || null,
-    });
+    }, token);
     if (req.user.blocked) return res.status(403).json({ error: "Conta bloqueada." });
     next();
   } catch {
@@ -132,12 +259,12 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { idToken } = req.body;
     if (!idToken) return res.status(400).json({ error: "Missing idToken" });
-    const decoded = await decodeToken(idToken);
+    const decoded = await verifyFirebaseToken(idToken);
     const user = await buildUser(decoded.uid, {
       email: decoded.email || "",
       displayName: decoded.name || null,
       photoURL: decoded.picture || null,
-    });
+    }, idToken);
     if (user.blocked) return res.status(403).json({ error: "Conta bloqueada. Entre em contato com o suporte." });
     res.json(user);
   } catch (error: any) {
@@ -149,12 +276,13 @@ app.get("/api/auth/me", async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) return res.json(null);
   try {
-    const decoded = await decodeToken(authHeader.slice(7));
+    const token = authHeader.slice(7);
+    const decoded = await verifyFirebaseToken(token);
     res.json(await buildUser(decoded.uid, {
       email: decoded.email || "",
       displayName: decoded.name || null,
       photoURL: decoded.picture || null,
-    }));
+    }, token));
   } catch {
     res.json(null);
   }
@@ -165,14 +293,15 @@ app.post("/api/auth/logout", (_req, res) => res.json({ success: true }));
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 app.get("/api/projects", requireAuth, async (req: any, res) => {
-  const snap = await db.collection("projects").where("userId", "==", req.user.uid).orderBy("createdAt", "desc").get();
-  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const docs = await fsQuery("projects", { field: "userId", value: req.user.uid }, req.token);
+  docs.sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  res.json(docs);
 });
 
 app.get("/api/projects/:id", requireAuth, async (req: any, res) => {
-  const doc = await db.collection("projects").doc(req.params.id).get();
-  if (!doc.exists || doc.data()?.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
-  res.json({ id: doc.id, ...doc.data() });
+  const doc = await fsGet("projects", req.params.id, req.token);
+  if (!doc || doc.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
+  res.json({ id: req.params.id, ...doc });
 });
 
 app.post("/api/projects", requireAuth, async (req: any, res) => {
@@ -189,14 +318,13 @@ app.post("/api/projects", requireAuth, async (req: any, res) => {
     createdAt: now,
     updatedAt: now,
   };
-  const ref = await db.collection("projects").add(project);
-  res.json({ id: ref.id, ...project });
+  const id = await fsAdd("projects", project, req.token);
+  res.json({ id, ...project });
 });
 
 app.put("/api/projects/:id", requireAuth, async (req: any, res) => {
-  const docRef = db.collection("projects").doc(req.params.id);
-  const doc = await docRef.get();
-  if (!doc.exists || doc.data()?.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
+  const doc = await fsGet("projects", req.params.id, req.token);
+  if (!doc || doc.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
 
   const { title, status, content, outline } = req.body;
   const now = new Date().toISOString();
@@ -206,15 +334,14 @@ app.put("/api/projects/:id", requireAuth, async (req: any, res) => {
   if (content !== undefined) updates.content = content;
   if (outline !== undefined) updates.outline = outline;
 
-  await docRef.update(updates);
-  res.json({ id: req.params.id, ...doc.data(), ...updates });
+  await fsUpdate("projects", req.params.id, updates, req.token);
+  res.json({ id: req.params.id, ...doc, ...updates });
 });
 
 app.delete("/api/projects/:id", requireAuth, async (req: any, res) => {
-  const docRef = db.collection("projects").doc(req.params.id);
-  const doc = await docRef.get();
-  if (!doc.exists || doc.data()?.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
-  await docRef.delete();
+  const doc = await fsGet("projects", req.params.id, req.token);
+  if (!doc || doc.userId !== req.user.uid) return res.status(404).json({ error: "Not found" });
+  await fsDelete("projects", req.params.id, req.token);
   res.json({ success: true });
 });
 
@@ -225,7 +352,6 @@ app.post("/api/generate", requireAuth, async (req: any, res) => {
   const user = req.user;
 
   if (!type || !briefing) return res.status(400).json({ error: "Missing type or briefing" });
-
   if (user.credits <= 0) return res.status(402).json({ error: "Créditos insuficientes." });
 
   const agentId = storage.agents[type as keyof typeof storage.agents];
@@ -282,16 +408,15 @@ Retorne APENAS um JSON válido no formato:
 
     const outline = JSON.parse(jsonMatch[0]);
 
-    // Debit credit and add log in parallel
     await Promise.all([
-      db.collection("users").doc(user.uid).update({ credits: FieldValue.increment(-1) }),
-      db.collection("logs").add({
+      fsIncrement("users", user.uid, "credits", -1, req.token),
+      fsAdd("logs", {
         userId: user.uid,
         userEmail: user.email || "",
         action: `Gerou ${type}`,
         contentType: type,
         createdAt: new Date().toISOString(),
-      }),
+      }, req.token),
     ]);
 
     res.json({ outline });
@@ -303,13 +428,12 @@ Retorne APENAS um JSON válido no formato:
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
-app.get("/api/admin/users", requireAdmin, async (_req, res) => {
-  const snap = await db.collection("users").get();
-  const users = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+app.get("/api/admin/users", requireAdmin, async (req: any, res) => {
+  const users = await fsList("users", req.token);
   res.json(users);
 });
 
-app.patch("/api/admin/users/:uid", requireAdmin, async (req, res) => {
+app.patch("/api/admin/users/:uid", requireAdmin, async (req: any, res) => {
   const { uid } = req.params;
   const { role, credits, blocked } = req.body;
   const updates: Record<string, any> = {};
@@ -317,15 +441,15 @@ app.patch("/api/admin/users/:uid", requireAdmin, async (req, res) => {
   if (credits !== undefined) updates.credits = Number(credits);
   if (blocked !== undefined) updates.blocked = blocked;
 
-  const ref = db.collection("users").doc(uid);
-  await ref.set(updates, { merge: true });
-  const snap = await ref.get();
-  res.json({ uid, ...snap.data() });
+  await fsUpdate("users", uid, updates, req.token);
+  const snap = await fsGet("users", uid, req.token);
+  res.json({ uid, ...snap });
 });
 
-app.get("/api/admin/logs", requireAdmin, async (_req, res) => {
-  const snap = await db.collection("logs").orderBy("createdAt", "desc").limit(500).get();
-  res.json(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+app.get("/api/admin/logs", requireAdmin, async (req: any, res) => {
+  const logs = await fsList("logs", req.token);
+  logs.sort((a: any, b: any) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  res.json(logs.slice(0, 500));
 });
 
 app.get("/api/admin/agents", requireAdmin, (_req, res) => {
@@ -341,7 +465,7 @@ app.get("/api/admin/agents", requireAdmin, (_req, res) => {
   });
 });
 
-app.put("/api/admin/agents", requireAdmin, async (req, res) => {
+app.put("/api/admin/agents", requireAdmin, async (req: any, res) => {
   const { ebook, lesson_plan, slides, images } = req.body;
   if (ebook !== undefined) storage.agents.ebook = ebook;
   if (lesson_plan !== undefined) storage.agents.lesson_plan = lesson_plan;
@@ -369,9 +493,7 @@ app.put("/api/admin/agents", requireAdmin, async (req, res) => {
       if (listRes.ok) {
         const listData = await listRes.json();
         const existingIds: Record<string, string> = {};
-        for (const env of (listData.envs || [])) {
-          existingIds[env.key] = env.id;
-        }
+        for (const env of (listData.envs || [])) existingIds[env.key] = env.id;
 
         for (const [key, value] of Object.entries(envMap)) {
           const existingId = existingIds[key];
