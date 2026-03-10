@@ -61,3 +61,11 @@ export interface AgentConfig {
   slides: string;
   images: string;
 }
+
+export interface AgentsMeta {
+  _envStatus?: Record<string, boolean>;
+  _vercelConfigured?: boolean;
+  vercelPersisted?: boolean;
+  vercelError?: string | null;
+  vercelConfigured?: boolean;
+}

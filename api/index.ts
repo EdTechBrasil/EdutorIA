@@ -307,16 +307,76 @@ app.get("/api/admin/logs", requireAdmin, (_req, res) => {
 });
 
 app.get("/api/admin/agents", requireAdmin, (_req, res) => {
-  res.json(storage.agents);
+  res.json({
+    ...storage.agents,
+    _envStatus: {
+      ebook: !!process.env.TESS_AGENT_EBOOK,
+      lesson_plan: !!process.env.TESS_AGENT_PLANO,
+      slides: !!process.env.TESS_AGENT_SLIDES,
+      images: !!process.env.TESS_AGENT_IMAGENS,
+    },
+    _vercelConfigured: !!(process.env.VERCEL_TOKEN && process.env.VERCEL_PROJECT_ID),
+  });
 });
 
-app.put("/api/admin/agents", requireAdmin, (req, res) => {
+app.put("/api/admin/agents", requireAdmin, async (req, res) => {
   const { ebook, lesson_plan, slides, images } = req.body;
   if (ebook !== undefined) storage.agents.ebook = ebook;
   if (lesson_plan !== undefined) storage.agents.lesson_plan = lesson_plan;
   if (slides !== undefined) storage.agents.slides = slides;
   if (images !== undefined) storage.agents.images = images;
-  res.json(storage.agents);
+
+  let vercelPersisted = false;
+  let vercelError: string | null = null;
+
+  const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
+  const VERCEL_PROJECT_ID = process.env.VERCEL_PROJECT_ID;
+
+  if (VERCEL_TOKEN && VERCEL_PROJECT_ID) {
+    try {
+      const envMap: Record<string, string> = {};
+      if (ebook !== undefined) envMap["TESS_AGENT_EBOOK"] = ebook;
+      if (lesson_plan !== undefined) envMap["TESS_AGENT_PLANO"] = lesson_plan;
+      if (slides !== undefined) envMap["TESS_AGENT_SLIDES"] = slides;
+      if (images !== undefined) envMap["TESS_AGENT_IMAGENS"] = images;
+
+      const listRes = await fetch(`https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env`, {
+        headers: { Authorization: `Bearer ${VERCEL_TOKEN}` },
+      });
+
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const existingIds: Record<string, string> = {};
+        for (const env of (listData.envs || [])) {
+          existingIds[env.key] = env.id;
+        }
+
+        for (const [key, value] of Object.entries(envMap)) {
+          const existingId = existingIds[key];
+          if (existingId) {
+            await fetch(`https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${existingId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${VERCEL_TOKEN}` },
+              body: JSON.stringify({ value, type: "plain", target: ["production", "preview", "development"] }),
+            });
+          } else {
+            await fetch(`https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${VERCEL_TOKEN}` },
+              body: JSON.stringify({ key, value, type: "plain", target: ["production", "preview", "development"] }),
+            });
+          }
+        }
+        vercelPersisted = true;
+      } else {
+        vercelError = `Vercel API: ${listRes.statusText}`;
+      }
+    } catch (e: any) {
+      vercelError = e.message;
+    }
+  }
+
+  res.json({ ...storage.agents, vercelPersisted, vercelError, vercelConfigured: !!(VERCEL_TOKEN && VERCEL_PROJECT_ID) });
 });
 
 export default app;
