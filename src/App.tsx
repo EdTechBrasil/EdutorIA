@@ -18,10 +18,12 @@ const AuthContext = createContext<{
   user: User | null;
   loading: boolean;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }>({
   user: null,
   loading: true,
   logout: async () => {},
+  refreshUser: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -61,6 +63,11 @@ export default function App() {
   const handleLogin = async (idToken: string) => {
     const backendUser = await api.loginWithFirebase(idToken);
     setUser(backendUser);
+  };
+
+  const refreshUser = async () => {
+    const updated = await api.getMe();
+    if (updated) setUser(updated);
   };
 
   const logout = async () => {
@@ -107,7 +114,7 @@ export default function App() {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, logout, refreshUser }}>
       <Layout setView={setView} currentView={view}>
         <AnimatePresence mode="wait">
           {view === 'dashboard' && (

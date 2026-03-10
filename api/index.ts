@@ -25,6 +25,7 @@ const storage = {
   credits: {} as Record<string, number>,   // uid → credits
   roles: {} as Record<string, string>,     // uid → role
   blocked: {} as Record<string, boolean>,  // uid → blocked
+  profiles: {} as Record<string, { email: string; displayName: string | null; photoURL: string | null }>,
   agents: {
     ebook: process.env.TESS_AGENT_EBOOK || "",
     lesson_plan: process.env.TESS_AGENT_PLANO || "",
@@ -54,16 +55,23 @@ function buildUser(decoded: any) {
 
   const isAdmin = adminEmail && email.trim().toLowerCase() === adminEmail.trim().toLowerCase();
   const role = storage.roles[uid] ?? (isAdmin ? "admin" : "user");
-  if (isAdmin) storage.roles[uid] = "admin"; // always keep admin
+  if (isAdmin) storage.roles[uid] = "admin";
 
   const credits = storage.credits[uid] ?? 10;
   if (storage.credits[uid] === undefined) storage.credits[uid] = credits;
 
+  // Persist profile so admin panel can show name/email
+  storage.profiles[uid] = {
+    email,
+    displayName: decoded.name || storage.profiles[uid]?.displayName || null,
+    photoURL: decoded.picture || storage.profiles[uid]?.photoURL || null,
+  };
+
   return {
     uid,
     email,
-    displayName: decoded.name || null,
-    photoURL: decoded.picture || null,
+    displayName: storage.profiles[uid].displayName,
+    photoURL: storage.profiles[uid].photoURL,
     role,
     credits,
     blocked: storage.blocked[uid] ?? false,
@@ -268,16 +276,16 @@ Retorne APENAS um JSON válido no formato:
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
 app.get("/api/admin/users", requireAdmin, (_req, res) => {
-  // Build user list from what we know
   const allUids = new Set([
     ...Object.keys(storage.credits),
     ...Object.keys(storage.roles),
+    ...Object.keys(storage.profiles),
   ]);
   const users = Array.from(allUids).map((uid) => ({
     uid,
-    email: null,
-    displayName: null,
-    photoURL: null,
+    email: storage.profiles[uid]?.email || null,
+    displayName: storage.profiles[uid]?.displayName || null,
+    photoURL: storage.profiles[uid]?.photoURL || null,
     role: storage.roles[uid] || "user",
     credits: storage.credits[uid] ?? 10,
     blocked: storage.blocked[uid] ?? false,

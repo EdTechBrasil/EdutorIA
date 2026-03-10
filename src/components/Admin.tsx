@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useAuth } from '../App';
 import { User, AdminLog, AgentConfig } from '../types';
 import { Users, CreditCard, ScrollText, Bot, Save, RefreshCw, ShieldAlert, ChevronDown, Check } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -7,6 +8,7 @@ import { motion } from 'motion/react';
 type AdminTab = 'users' | 'credits' | 'logs' | 'agents';
 
 export const Admin: React.FC = () => {
+  const { refreshUser } = useAuth();
   const [tab, setTab] = useState<AdminTab>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [logs, setLogs] = useState<AdminLog[]>([]);
@@ -55,6 +57,7 @@ export const Admin: React.FC = () => {
     if (credits === undefined) return;
     await handleUpdateUser(uid, { credits });
     setCreditEdits(prev => { const n = { ...prev }; delete n[uid]; return n; });
+    await refreshUser();
   };
 
   const handleSaveAgents = async () => {
