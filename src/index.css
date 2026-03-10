@@ -12,17 +12,13 @@
   --color-glass-border: rgba(255, 255, 255, 0.08);
 }
 
+/* ─── Dark Mode (padrão) ─────────────────────────────────────────────────── */
+
 @layer base {
   body {
     @apply bg-obsidian text-white/90 antialiased selection:bg-neon-cyan/30 selection:text-white;
     font-feature-settings: "ss01", "ss02", "cv01";
-    transition: background-color 0.4s ease, color 0.4s ease;
-  }
-
-  /* ── Light Mode ── */
-  body.light {
-    background-color: #f0f4f8;
-    color: #0a0f1a;
+    transition: background-color 0.5s ease, color 0.5s ease;
   }
 }
 
@@ -31,84 +27,190 @@
     background:
       radial-gradient(circle at 0% 0%, rgba(0, 240, 255, 0.03) 0%, transparent 50%),
       radial-gradient(circle at 100% 100%, rgba(188, 0, 255, 0.03) 0%, transparent 50%),
-      radial-gradient(circle at 50% 50%, rgba(2, 4, 8, 1) 0%, rgba(1, 2, 4, 1) 100%);
-  }
-
-  body.light .cosmic-bg {
-    background:
-      radial-gradient(circle at 0% 0%, rgba(0, 200, 255, 0.06) 0%, transparent 50%),
-      radial-gradient(circle at 100% 100%, rgba(180, 0, 255, 0.04) 0%, transparent 50%),
-      radial-gradient(circle at 50% 50%, #f0f4f8 0%, #e4ecf5 100%);
+      radial-gradient(circle at 50% 50%, #020408 0%, #010204 100%);
   }
 
   .glass-card {
-    @apply bg-white/[0.02] backdrop-blur-2xl border border-glass-border rounded-[2rem] shadow-2xl;
-    transition: background-color 0.4s ease, border-color 0.4s ease;
+    background: rgba(255, 255, 255, 0.02);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 2rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    transition: background 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
   }
-
-  body.light .glass-card {
-    background: rgba(255, 255, 255, 0.7);
-    border-color: rgba(0, 0, 0, 0.08);
-    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.08);
-  }
-
-  body.light aside {
-    background: rgba(255, 255, 255, 0.6) !important;
-    border-color: rgba(0, 0, 0, 0.06) !important;
-  }
-
-  body.light header {
-    color: #0a0f1a;
-  }
-
-  body.light .text-white\/90 { color: rgba(10, 15, 26, 0.9); }
-  body.light .text-white\/60 { color: rgba(10, 15, 26, 0.6); }
-  body.light .text-white\/40 { color: rgba(10, 15, 26, 0.4); }
-  body.light .text-white\/30 { color: rgba(10, 15, 26, 0.3); }
-  body.light .text-white\/20 { color: rgba(10, 15, 26, 0.2); }
-
-  body.light .bg-obsidian\/40 { background-color: rgba(240, 244, 248, 0.8) !important; }
 
   .neon-text-glow {
     text-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
   }
 
-  body.light .neon-text-glow {
-    text-shadow: 0 0 15px rgba(0, 180, 210, 0.5);
-  }
-
   .neo-brutalist-border {
-    @apply border border-white/10 hover:border-neon-cyan/40 transition-colors duration-500;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: border-color 0.5s ease;
   }
-
-  body.light .neo-brutalist-border {
-    border-color: rgba(0, 0, 0, 0.1);
+  .neo-brutalist-border:hover {
+    border-color: rgba(0, 240, 255, 0.4);
   }
 }
+
+/* ─── Light Mode ─────────────────────────────────────────────────────────── */
+
+body.light {
+  background-color: #EEF2F7;
+  color: #111827;
+  --color-neon-cyan: #0099B8;
+  --color-neon-purple: #8B00CC;
+}
+
+/* Background geral */
+body.light .cosmic-bg {
+  background:
+    radial-gradient(circle at 10% 20%, rgba(0, 153, 184, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 90% 80%, rgba(139, 0, 204, 0.05) 0%, transparent 50%),
+    linear-gradient(160deg, #EEF2F7 0%, #E2EAF4 50%, #DAE4F0 100%);
+}
+
+/* Cards */
+body.light .glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(148, 163, 184, 0.25);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+body.light .glass-card:hover {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(0, 153, 184, 0.3);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    0 12px 40px rgba(0, 153, 184, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+}
+
+/* Sidebar */
+body.light aside {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border-right-color: rgba(148, 163, 184, 0.2) !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+/* Header */
+body.light header {
+  border-bottom-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Footer */
+body.light footer {
+  background: rgba(255, 255, 255, 0.4) !important;
+  border-top-color: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* ── Texto ── */
+body.light,
+body.light .text-white\/90 { color: #111827; }
+body.light .text-white\/80 { color: rgba(17, 24, 39, 0.8); }
+body.light .text-white\/60 { color: #4B5563; }
+body.light .text-white\/50 { color: #6B7280; }
+body.light .text-white\/40 { color: #6B7280; }
+body.light .text-white\/30 { color: #9CA3AF; }
+body.light .text-white\/20 { color: #9CA3AF; }
+body.light .text-white\/15 { color: #D1D5DB; }
+
+/* Cor cyan no modo claro */
+body.light .text-neon-cyan { color: #0099B8 !important; }
+body.light .text-neon-purple { color: #8B00CC !important; }
+
+/* ── Fundos ── */
+body.light .bg-obsidian { background-color: #EEF2F7 !important; }
+body.light .bg-obsidian\/40 { background-color: rgba(238, 242, 247, 0.8) !important; }
+body.light .bg-obsidian\/20 { background-color: rgba(238, 242, 247, 0.5) !important; }
+body.light .bg-white\/\[0\.02\] { background-color: rgba(255, 255, 255, 0.6) !important; }
+body.light .bg-white\/\[0\.03\] { background-color: rgba(255, 255, 255, 0.8) !important; }
+body.light .bg-white\/\[0\.04\] { background-color: rgba(255, 255, 255, 0.9) !important; }
+body.light .bg-white\/\[0\.05\] { background-color: rgba(255, 255, 255, 0.95) !important; }
+body.light .bg-white\/5  { background-color: rgba(0, 0, 0, 0.04) !important; }
+body.light .bg-white\/10 { background-color: rgba(0, 0, 0, 0.06) !important; }
+
+/* ── Bordas ── */
+body.light .border-white\/5  { border-color: rgba(148, 163, 184, 0.2) !important; }
+body.light .border-white\/8  { border-color: rgba(148, 163, 184, 0.25) !important; }
+body.light .border-white\/10 { border-color: rgba(148, 163, 184, 0.3) !important; }
+body.light .border-white\/20 { border-color: rgba(100, 116, 139, 0.35) !important; }
+body.light .border-dashed    { border-color: rgba(148, 163, 184, 0.4) !important; }
+body.light .neo-brutalist-border { border-color: rgba(148, 163, 184, 0.25) !important; }
+
+/* ── Cyan glow e neon no modo claro ── */
+body.light .neon-text-glow {
+  text-shadow: 0 0 16px rgba(0, 153, 184, 0.4);
+}
+body.light .bg-neon-cyan\/5  { background-color: rgba(0, 153, 184, 0.06) !important; }
+body.light .bg-neon-cyan\/10 { background-color: rgba(0, 153, 184, 0.1) !important; }
+body.light .bg-neon-cyan\/\[0\.02\] { background-color: rgba(0, 153, 184, 0.03) !important; }
+body.light .border-neon-cyan\/20 { border-color: rgba(0, 153, 184, 0.25) !important; }
+body.light .border-neon-cyan\/30 { border-color: rgba(0, 153, 184, 0.35) !important; }
+body.light .border-neon-cyan\/40 { border-color: rgba(0, 153, 184, 0.45) !important; }
+
+/* ── Inputs e selects ── */
+body.light input,
+body.light select,
+body.light textarea {
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgba(148, 163, 184, 0.35) !important;
+  color: #111827 !important;
+}
+body.light input:focus,
+body.light select:focus,
+body.light textarea:focus {
+  border-color: rgba(0, 153, 184, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(0, 153, 184, 0.1);
+}
+body.light input::placeholder,
+body.light textarea::placeholder { color: #9CA3AF !important; }
+
+/* ── Botão de seleção de role ── */
+body.light select.bg-white\/5 {
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #374151 !important;
+}
+
+/* ── Tabs ── */
+body.light .border-b { border-bottom-color: rgba(148, 163, 184, 0.2) !important; }
+
+/* ── Sidebar ativo ── */
+body.light .bg-neon-cyan\/10 { background-color: rgba(0, 153, 184, 0.1) !important; }
+
+/* ── Scrollbar ── */
+body.light ::-webkit-scrollbar { width: 6px; }
+body.light ::-webkit-scrollbar-track { background: #E2EAF4; }
+body.light ::-webkit-scrollbar-thumb { background: rgba(0, 153, 184, 0.3); border-radius: 3px; }
+
+/* ── Quill editor ── */
+body.light .custom-quill-futuristic .ql-toolbar {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+}
+body.light .custom-quill-futuristic .ql-container { color: #111827 !important; }
+body.light .custom-quill-futuristic .ql-stroke { stroke: #475569 !important; }
+body.light .custom-quill-futuristic .ql-fill { fill: #475569 !important; }
+body.light .custom-quill-futuristic .ql-picker { color: #475569 !important; }
+
+/* ─── Animations ─────────────────────────────────────────────────────────── */
 
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-10px); }
 }
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
-}
+.animate-float { animation: float 6s ease-in-out infinite; }
 
 @keyframes pulse-slow {
   0%, 100% { opacity: 0.3; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(1.1); }
 }
-
-.animate-pulse-slow {
-  animation: pulse-slow 8s ease-in-out infinite;
-}
+.animate-pulse-slow { animation: pulse-slow 8s ease-in-out infinite; }
 
 @keyframes spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
-.animate-spin-slow {
-  animation: spin-slow 12s linear infinite;
-}
+.animate-spin-slow { animation: spin-slow 12s linear infinite; }
