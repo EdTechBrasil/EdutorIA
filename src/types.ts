@@ -33,6 +33,7 @@ export interface Briefing {
   length: 'short' | 'medium' | 'long';
   extras: string[];
   references: string;
+  outline?: Outline;
 }
 
 export interface Outline {

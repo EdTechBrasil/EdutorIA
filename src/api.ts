@@ -1,4 +1,4 @@
-import { Project, Briefing, User, AdminLog, AgentConfig, ContentType } from './types';
+import { Project, Briefing, Outline, User, AdminLog, AgentConfig, ContentType } from './types';
 import { auth } from './firebase';
 
 const BASE_URL = '/api';
@@ -67,10 +67,24 @@ export const api = {
   },
 
   // Generate (Tess IA)
-  generate: async (type: ContentType, briefing: Briefing): Promise<{ outline: any }> => {
-    return apiFetch<{ outline: any }>('/generate', {
+  generateOutline: async (type: ContentType, briefing: Briefing): Promise<{ outline: Outline }> => {
+    return apiFetch<{ outline: Outline }>('/generate/outline', {
       method: 'POST',
       body: JSON.stringify({ type, briefing }),
+    });
+  },
+  generateChapter: async (params: {
+    projectId: string;
+    chapterIndex: number;
+    chapterTitle: string;
+    sections: string[];
+    briefing: Briefing;
+    type: ContentType;
+    previousSummaries?: string[];
+  }): Promise<{ content: string }> => {
+    return apiFetch<{ content: string }>('/generate/chapter', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
   },
 

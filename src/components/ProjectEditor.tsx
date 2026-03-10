@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project } from '../types';
 import { api } from '../api';
+import { exportProjectToPdf } from '../utils/exportPdf';
 import { 
   ArrowLeft, 
   Save, 
@@ -27,6 +28,7 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
   const [activeChapterIndex, setActiveChapterIndex] = useState(0);
   const [editorContent, setEditorContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -98,7 +100,24 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
         <div className="flex items-center gap-4">
           <div className="flex bg-white/[0.02] border border-white/5 rounded-2xl p-1">
             <button className="px-4 py-2 text-[10px] font-mono tracking-widest text-white/40 hover:text-white transition-colors">COMPARTILHAR</button>
-            <button className="px-4 py-2 text-[10px] font-mono tracking-widest text-white/40 hover:text-white transition-colors">EXPORTAR</button>
+            <button
+              onClick={async () => {
+                if (!project || isExporting) return;
+                setIsExporting(true);
+                try {
+                  await exportProjectToPdf(project);
+                } catch (e) {
+                  console.error('Export error:', e);
+                } finally {
+                  setIsExporting(false);
+                }
+              }}
+              disabled={isExporting}
+              className="px-4 py-2 text-[10px] font-mono tracking-widest text-white/40 hover:text-white transition-colors disabled:opacity-40 flex items-center gap-2"
+            >
+              {isExporting ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+              {isExporting ? 'EXPORTANDO...' : 'EXPORTAR PDF'}
+            </button>
           </div>
           <button 
             onClick={handleSave}

@@ -31,6 +31,7 @@ function toFsVal(v: any): any {
   if (typeof v === "boolean") return { booleanValue: v };
   if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
   if (typeof v === "string") return { stringValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFsVal) } };
   if (typeof v === "object") return { mapValue: { fields: toFsFields(v) } };
   return { stringValue: String(v) };
 }
@@ -347,12 +348,59 @@ app.delete("/api/projects/:id", requireAuth, async (req: any, res) => {
 
 // ─── Generate (Tess IA) ───────────────────────────────────────────────────────
 
-app.post("/api/generate", requireAuth, async (req: any, res) => {
-  const { type, briefing } = req.body;
-  const user = req.user;
+async function callTessAgent(agentId: string, prompt: string, tessApiKey: string): Promise<string> {
+  const tessRes = await fetch(`https://api.tess.im/agents/${agentId}/execute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${tessApiKey}` },
+    body: JSON.stringify({ wait_execution: true, model: "tess-5", messages: [{ role: "user", content: prompt }] }),
+  });
+  if (!tessRes.ok) {
+    const errText = await tessRes.text();
+    console.error("Tess API error:", errText);
+    throw new Error("Erro na API Tess IA: " + tessRes.statusText);
+  }
+  const data = await tessRes.json();
+  const text: string = data?.output || data?.response || data?.choices?.[0]?.message?.content || data?.content || "";
+  if (!text) throw new Error("Resposta vazia da Tess IA.");
+  return text;
+}
 
+function buildOutlinePrompt(type: string, briefing: any): string {
+  const extras = Array.isArray(briefing.extras) && briefing.extras.length > 0
+    ? `Elementos extras: ${briefing.extras.join(", ")}.`
+    : "";
+  const lengthMap: Record<string, string> = { short: "curto (5-7 capítulos)", medium: "médio (8-12 capítulos)", long: "longo (13-20 capítulos)" };
+  const lengthDesc = lengthMap[briefing.length] || "médio";
+
+  const prompts: Record<string, string> = {
+    ebook: `Gere um sumário estruturado para um ${briefing.material_type || "e-book"} sobre "${briefing.main_topic}".
+Público-alvo: ${briefing.target_audience}. Objetivo: ${briefing.objective}. Tom: ${briefing.tone}. Idioma: ${briefing.language}. Tamanho: ${lengthDesc}. ${extras}
+Retorne APENAS um JSON válido (sem markdown, sem explicações) no formato:
+{"chapters":[{"title":"Capítulo 1: ...","sections":["Seção 1.1: ...","Seção 1.2: ..."],"status":"pending"}]}`,
+
+    lesson_plan: `Gere um plano estruturado para "${briefing.material_type || "plano de aula"}" sobre "${briefing.main_topic}".
+Público-alvo: ${briefing.target_audience}. Objetivo: ${briefing.objective}. Tom: ${briefing.tone}. Idioma: ${briefing.language}. ${extras}
+Retorne APENAS um JSON válido no formato:
+{"chapters":[{"title":"Etapa 1: ...","sections":["Atividade: ...","Duração: ..."],"status":"pending"}]}`,
+
+    slides: `Gere um roteiro de slides para "${briefing.material_type || "apresentação"}" sobre "${briefing.main_topic}".
+Público-alvo: ${briefing.target_audience}. Objetivo: ${briefing.objective}. Tom: ${briefing.tone}. Idioma: ${briefing.language}. Tamanho: ${lengthDesc}. ${extras}
+Retorne APENAS um JSON válido no formato:
+{"chapters":[{"title":"Slide X: ...","sections":["Ponto principal","Subponto"],"status":"pending"}]}`,
+
+    images: `Gere uma lista de imagens educacionais para "${briefing.main_topic}".
+Público-alvo: ${briefing.target_audience}. Estilo: ${briefing.tone}. Idioma: ${briefing.language}. ${extras}
+Retorne APENAS um JSON válido no formato:
+{"chapters":[{"title":"Imagem: ...","sections":["Descrição detalhada para geração da imagem"],"status":"pending"}]}`,
+  };
+
+  return prompts[type] || prompts.ebook;
+}
+
+// POST /api/generate/outline — generate outline only, no credit decrement
+app.post("/api/generate/outline", requireAuth, async (req: any, res) => {
+  const { type, briefing } = req.body;
   if (!type || !briefing) return res.status(400).json({ error: "Missing type or briefing" });
-  if (user.credits <= 0) return res.status(402).json({ error: "Créditos insuficientes." });
 
   const agentId = storage.agents[type as keyof typeof storage.agents];
   if (!agentId) return res.status(400).json({ error: `Agente Tess não configurado para: ${type}. Configure na área ADM.` });
@@ -360,69 +408,101 @@ app.post("/api/generate", requireAuth, async (req: any, res) => {
   const TESS_API_KEY = process.env.TESS_API_KEY;
   if (!TESS_API_KEY) return res.status(500).json({ error: "TESS_API_KEY não configurada." });
 
-  const prompts: Record<string, string> = {
-    ebook: `Gere um sumário estruturado para um e-book sobre "${briefing.main_topic}".
-Público-alvo: ${briefing.target_audience}. Tom: ${briefing.tone}. Tamanho: ${briefing.length}.
-Retorne APENAS um JSON válido no formato:
-{"chapters":[{"title":"...","sections":["...","..."],"status":"pending"}]}`,
-
-    lesson_plan: `Gere um plano de aula estruturado sobre "${briefing.main_topic}".
-Público-alvo: ${briefing.target_audience}. Objetivo: ${briefing.objective}. Tom: ${briefing.tone}.
-Retorne APENAS um JSON válido no formato:
-{"chapters":[{"title":"...","sections":["...","..."],"status":"pending"}]}`,
-
-    slides: `Gere um roteiro de slides para uma apresentação sobre "${briefing.main_topic}".
-Público-alvo: ${briefing.target_audience}. Tom: ${briefing.tone}. Tamanho: ${briefing.length}.
-Retorne APENAS um JSON válido no formato:
-{"chapters":[{"title":"Slide X: ...","sections":["Ponto 1","Ponto 2"],"status":"pending"}]}`,
-
-    images: `Gere prompts descritivos para criação de imagens educacionais sobre "${briefing.main_topic}".
-Público-alvo: ${briefing.target_audience}. Estilo: ${briefing.tone}.
-Retorne APENAS um JSON válido no formato:
-{"chapters":[{"title":"Imagem: ...","sections":["Prompt detalhado para geração"],"status":"pending"}]}`,
-  };
-
-  const prompt = prompts[type] || prompts.ebook;
-
   try {
-    const tessRes = await fetch(`https://api.tess.im/agents/${agentId}/execute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TESS_API_KEY}` },
-      body: JSON.stringify({ wait_execution: true, model: "tess-5", messages: [{ role: "user", content: prompt }] }),
-    });
-
-    if (!tessRes.ok) {
-      const errText = await tessRes.text();
-      console.error("Tess API error:", errText);
-      return res.status(502).json({ error: "Erro na API Tess IA: " + tessRes.statusText });
-    }
-
-    const tessData = await tessRes.json();
-    const rawText: string =
-      tessData?.output || tessData?.response || tessData?.choices?.[0]?.message?.content || tessData?.content || "";
-
-    if (!rawText) return res.status(502).json({ error: "Resposta vazia da Tess IA." });
-
+    const rawText = await callTessAgent(agentId, buildOutlinePrompt(type, briefing), TESS_API_KEY);
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return res.status(502).json({ error: "Resposta da Tess IA não contém JSON válido." });
 
     const outline = JSON.parse(jsonMatch[0]);
+    res.json({ outline });
+  } catch (error: any) {
+    console.error("Generate outline error:", error);
+    res.status(500).json({ error: error.message || "Erro interno na geração do sumário." });
+  }
+});
+
+// POST /api/generate/chapter — generate one chapter, decrement 1 credit
+app.post("/api/generate/chapter", requireAuth, async (req: any, res) => {
+  const { projectId, chapterIndex, chapterTitle, sections, briefing, type, previousSummaries } = req.body;
+  const user = req.user;
+
+  if (!projectId || chapterIndex === undefined || !chapterTitle) {
+    return res.status(400).json({ error: "Missing required fields." });
+  }
+  if (user.credits <= 0) return res.status(402).json({ error: "Créditos insuficientes." });
+
+  const agentId = storage.agents[type as keyof typeof storage.agents];
+  if (!agentId) return res.status(400).json({ error: `Agente Tess não configurado para: ${type}.` });
+
+  const TESS_API_KEY = process.env.TESS_API_KEY;
+  if (!TESS_API_KEY) return res.status(500).json({ error: "TESS_API_KEY não configurada." });
+
+  const doc = await fsGet("projects", projectId, req.token);
+  if (!doc || doc.userId !== user.uid) return res.status(404).json({ error: "Projeto não encontrado." });
+
+  const prevContext = Array.isArray(previousSummaries) && previousSummaries.length > 0
+    ? `\n\nContexto dos capítulos anteriores:\n${previousSummaries.map((s, i) => `Capítulo ${i + 1}: ${s}`).join("\n")}`
+    : "";
+
+  const sectionsStr = Array.isArray(sections) ? sections.join("\n- ") : "";
+  const extrasStr = Array.isArray(briefing?.extras) && briefing.extras.length > 0
+    ? `Inclua: ${briefing.extras.join(", ")}.`
+    : "";
+
+  const prompt = `Você é um especialista em criação de conteúdo educacional. Escreva o conteúdo completo e detalhado de um capítulo para um ${briefing?.material_type || type} intitulado "${briefing?.main_topic}".
+
+CAPÍTULO ${chapterIndex + 1}: ${chapterTitle}
+Seções a cobrir:
+- ${sectionsStr}
+
+Briefing:
+- Público-alvo: ${briefing?.target_audience}
+- Objetivo: ${briefing?.objective}
+- Tom: ${briefing?.tone}
+- Idioma: ${briefing?.language || "PT-BR"}
+- Extensão: ${briefing?.length}
+${extrasStr}${prevContext}
+
+Escreva o conteúdo completo em HTML semântico (use <h2>, <h3>, <p>, <ul>, <li>, <strong>, <em>). Seja detalhado, educacional e envolvente. Não inclua o número do capítulo no título H2.`;
+
+  try {
+    const content = await callTessAgent(agentId, prompt, TESS_API_KEY);
+
+    // Update chapter in project outline
+    const currentOutline = doc.outline || { chapters: [] };
+    const chapters = Array.isArray(currentOutline.chapters) ? [...currentOutline.chapters] : [];
+    if (chapters[chapterIndex]) {
+      chapters[chapterIndex] = { ...chapters[chapterIndex], content, status: "completed" };
+    }
+    const updatedOutline = { ...currentOutline, chapters };
 
     await Promise.all([
+      fsUpdate("projects", projectId, {
+        outline: updatedOutline,
+        status: "generating",
+        updatedAt: new Date().toISOString(),
+      }, req.token),
       fsIncrement("users", user.uid, "credits", -1, req.token),
       fsAdd("logs", {
         userId: user.uid,
         userEmail: user.email || "",
-        action: `Gerou ${type}`,
+        action: `Gerou capítulo ${chapterIndex + 1} de ${type}`,
         contentType: type,
         createdAt: new Date().toISOString(),
       }, req.token),
     ]);
 
-    res.json({ outline });
+    res.json({ content });
   } catch (error: any) {
-    console.error("Generate error:", error);
-    res.status(500).json({ error: "Erro interno na geração: " + error.message });
+    console.error("Generate chapter error:", error);
+    // Mark chapter as error in Firestore
+    try {
+      const currentOutline = doc.outline || { chapters: [] };
+      const chapters = Array.isArray(currentOutline.chapters) ? [...currentOutline.chapters] : [];
+      if (chapters[chapterIndex]) chapters[chapterIndex] = { ...chapters[chapterIndex], status: "error" };
+      await fsUpdate("projects", projectId, { outline: { ...currentOutline, chapters }, updatedAt: new Date().toISOString() }, req.token);
+    } catch {}
+    res.status(500).json({ error: error.message || "Erro interno na geração do capítulo." });
   }
 });
 

@@ -9,10 +9,11 @@ import { Dashboard } from './components/Dashboard';
 import { Wizard } from './components/Wizard';
 import { ProjectEditor } from './components/ProjectEditor';
 import { Admin } from './components/Admin';
+import { GenerationProgress } from './components/GenerationProgress';
 import { Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-type View = 'dashboard' | 'wizard' | 'editor' | 'admin';
+type View = 'dashboard' | 'wizard' | 'generating' | 'editor' | 'admin';
 
 const AuthContext = createContext<{
   user: User | null;
@@ -135,8 +136,15 @@ export default function App() {
               onCancel={() => setView('dashboard')}
               onComplete={(id) => {
                 setSelectedProjectId(id);
-                setView('editor');
+                setView('generating');
               }}
+            />
+          )}
+          {view === 'generating' && selectedProjectId && (
+            <GenerationProgress
+              key="generating"
+              projectId={selectedProjectId}
+              onComplete={() => setView('editor')}
             />
           )}
           {view === 'editor' && selectedProjectId && (
