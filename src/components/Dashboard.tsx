@@ -49,14 +49,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
   }, [user]);
 
   return (
-    <div className="h-full flex flex-col gap-12 py-8">
+    <div className="h-full flex flex-col gap-6 py-6">
       {/* Header Section */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-3 mb-4"
+            className="flex items-center gap-3 mb-2"
           >
             <div className="w-2 h-2 bg-neon-cyan rounded-full animate-pulse" />
             <span className="text-[10px] font-mono tracking-[0.4em] text-white/40 uppercase">Hub de Criação Neural</span>
@@ -68,7 +68,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
           >
             Olá, <span className="text-neon-cyan neon-text-glow">{user?.displayName?.split(' ')[0]}</span>
           </motion.h1>
-          <p className="text-white/30 mt-4 font-light max-w-md">
+          <p className="text-white/30 mt-2 font-light max-w-md">
             O que vamos sintetizar hoje? Escolha um módulo abaixo para iniciar sua jornada criativa.
           </p>
         </div>
@@ -85,14 +85,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: i * 0.1 }}
-                className="glass-card px-8 py-5 flex flex-col gap-1 min-w-[140px] border-white/5"
+                className="glass-card px-5 py-4 flex flex-col gap-1 min-w-[120px] border-white/5"
               >
                 <div className="flex items-center justify-between mb-2">
                   <stat.icon className="w-4 h-4 text-neon-cyan/60" />
                   <div className="w-1.5 h-1.5 bg-neon-cyan/40 rounded-full" />
                 </div>
                 <p className="text-[9px] font-mono tracking-widest text-white/20 uppercase">{stat.label}</p>
-                <p className="text-2xl font-bold tracking-tighter">{stat.value}</p>
+                <p className="text-xl font-bold tracking-tighter">{stat.value}</p>
               </motion.div>
             ))}
           </div>
@@ -113,12 +113,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
 
       {/* Content Type Grid */}
       <section>
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-4 mb-4">
           <div className="w-1 h-4 bg-neon-cyan rounded-full" />
           <h2 className="text-[10px] font-mono tracking-[0.5em] text-white/30 uppercase">Tipos de Conteúdo</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {CONTENT_TYPES.map((type, i) => {
             const Icon = TYPE_ICONS[type.id];
             return (
@@ -129,23 +129,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
                 transition={{ delay: i * 0.08 }}
                 whileHover={{ scale: 1.02, translateY: -5 }}
                 onClick={() => onNewProject(type.id)}
-                className="glass-card p-8 text-left group relative overflow-hidden neo-brutalist-border flex flex-col h-full"
+                className="glass-card p-5 text-left group relative overflow-hidden neo-brutalist-border flex flex-col h-full"
               >
                 <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                   <Icon className="w-32 h-32 -mr-12 -mt-12 rotate-12" />
                 </div>
 
                 <div className="relative z-10 flex flex-col h-full">
-                  <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center mb-8 group-hover:bg-neon-cyan group-hover:text-obsidian transition-all duration-500">
+                  <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center mb-4 group-hover:bg-neon-cyan group-hover:text-obsidian transition-all duration-500">
                     <Icon className="w-6 h-6" />
                   </div>
 
                   <h3 className="text-xl font-bold tracking-tight mb-3 group-hover:text-neon-cyan transition-colors">
                     {type.label}
                   </h3>
-                  <p className="text-xs text-white/40 font-light leading-relaxed mb-8 flex-1">{type.desc}</p>
+                  <p className="text-xs text-white/40 font-light leading-relaxed mb-4 flex-1">{type.desc}</p>
 
-                  <div className="flex items-center justify-between pt-6 border-t border-white/5">
+                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
                     <div className="flex items-center gap-2 text-neon-cyan text-[9px] font-mono tracking-widest uppercase">
                       <span>Criar</span>
                       <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
