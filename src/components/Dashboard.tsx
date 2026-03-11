@@ -12,7 +12,12 @@ import {
   ArrowRight,
   ChevronRight,
   Shield,
+  Trash2,
+  X,
+  Loader2,
+  Search,
 } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 import { motion } from 'motion/react';
 
 const TYPE_ICONS: Record<ContentType, React.ElementType> = {
@@ -30,8 +35,32 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProject, onAdmin }) => {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  const handleDeleteProject = async (projectId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirmDeleteId !== projectId) {
+      setConfirmDeleteId(projectId);
+      return;
+    }
+    setDeletingId(projectId);
+    setConfirmDeleteId(null);
+    try {
+      await api.deleteProject(projectId);
+      setProjects(prev => prev.filter(p => p.id !== projectId));
+      addToast({ message: 'Projeto removido com sucesso.', type: 'success' });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Erro ao deletar projeto.', type: 'error' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchProjects = async () => {
@@ -161,11 +190,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
 
       {/* Recent Projects */}
       <section>
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             <div className="w-1 h-4 bg-neon-purple rounded-full" />
             <h2 className="text-[10px] font-mono tracking-[0.5em] text-white/30 uppercase">Atividade Recente</h2>
           </div>
+          {projects.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/20 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Buscar projetos..."
+                value={searchQuery}
+                onChange={e => { setSearchQuery(e.target.value); setShowAll(false); }}
+                className="pl-9 pr-4 py-2.5 bg-white/[0.03] border border-white/[0.07] rounded-xl text-sm text-white/70 placeholder:text-white/20 focus:outline-none focus:border-neon-cyan/30 transition-all w-52"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-4">
@@ -173,12 +214,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
             <div className="glass-card p-12 text-center border-white/5">
               <p className="text-white/20 font-mono text-xs uppercase tracking-widest animate-pulse">Carregando...</p>
             </div>
-          ) : projects.length > 0 ? (
-            projects.slice(0, 5).map((project) => (
-              <button
+          ) : projects.length > 0 ? (() => {
+            const filtered = projects.filter(p =>
+              p.title.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+            const visible = showAll || searchQuery ? filtered : filtered.slice(0, 5);
+            return (<>
+            {visible.map((project) => (
+              <div
                 key={project.id}
-                onClick={() => onSelectProject(project.id)}
-                className="glass-card p-6 flex items-center justify-between group hover:bg-white/[0.04] transition-all border-white/5"
+                role="button"
+                tabIndex={0}
+                onClick={() => { if (confirmDeleteId !== project.id) onSelectProject(project.id); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') onSelectProject(project.id); }}
+                className="glass-card p-6 flex items-center justify-between group hover:bg-white/[0.04] transition-all border-white/5 cursor-pointer"
               >
                 <div className="flex items-center gap-6">
                   <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center group-hover:bg-neon-purple/20 transition-colors">
@@ -196,12 +245,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNewProject, onSelectProj
                     </div>
                   </div>
                 </div>
-                <div className="w-10 h-10 rounded-full border border-white/5 flex items-center justify-center group-hover:border-neon-cyan/40 transition-all">
-                  <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-neon-cyan" />
+                <div className="flex items-center gap-3">
+                  {confirmDeleteId === project.id ? (
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={(e) => handleDeleteProject(project.id, e)}
+                        className="text-[9px] font-mono text-red-400 border border-red-500/30 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-all"
+                      >
+                        CONFIRMAR
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                        className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/60 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => handleDeleteProject(project.id, e)}
+                      disabled={deletingId === project.id}
+                      className="w-8 h-8 rounded-xl flex items-center justify-center text-white/10 hover:text-red-400 hover:bg-red-500/5 transition-all opacity-0 group-hover:opacity-100 disabled:opacity-40"
+                    >
+                      {deletingId === project.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  )}
+                  <div className="w-10 h-10 rounded-full border border-white/5 flex items-center justify-center group-hover:border-neon-cyan/40 transition-all">
+                    <ChevronRight className="w-5 h-5 text-white/10 group-hover:text-neon-cyan" />
+                  </div>
                 </div>
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="glass-card p-10 text-center border-white/5">
+                <p className="text-white/20 font-mono text-xs uppercase tracking-widest">Nenhum resultado para "{searchQuery}"</p>
+              </div>
+            )}
+            {!showAll && !searchQuery && filtered.length > 5 && (
+              <button
+                onClick={() => setShowAll(true)}
+                className="w-full py-3.5 rounded-2xl border border-dashed border-white/[0.07] text-[9px] font-mono tracking-widest text-white/20 hover:text-neon-cyan hover:border-neon-cyan/30 transition-all"
+              >
+                VER TODOS OS {filtered.length} PROJETOS
               </button>
-            ))
-          ) : (
+            )}
+            </>);
+          })() : (
             <div className="glass-card p-12 text-center border-dashed border-white/10">
               <p className="text-white/20 font-mono text-xs uppercase tracking-widest">Nenhum projeto criado ainda.</p>
               <button

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Project, ContentType } from '../types';
 import { api } from '../api';
-import { CheckCircle2, Circle, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { CheckCircle2, Circle, Loader2, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 import { motion } from 'motion/react';
 
 interface GenerationProgressProps {
@@ -17,11 +18,13 @@ interface ChapterProgress {
 }
 
 export const GenerationProgress: React.FC<GenerationProgressProps> = ({ projectId, onComplete }) => {
+  const { addToast } = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [chapters, setChapters] = useState<ChapterProgress[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  const [retryingIndex, setRetryingIndex] = useState<number | null>(null);
   const generatingRef = useRef(false);
 
   useEffect(() => {
@@ -86,6 +89,40 @@ export const GenerationProgress: React.FC<GenerationProgressProps> = ({ projectI
     } catch (err: any) {
       setError(err.message || 'Erro ao carregar projeto.');
       generatingRef.current = false;
+    }
+  };
+
+  const retryChapter = async (index: number) => {
+    if (!project || retryingIndex !== null) return;
+    const ch = project.outline!.chapters[index];
+    setRetryingIndex(index);
+    setChapters(prev => prev.map((c, idx) => idx === index ? { ...c, status: 'generating' } : c));
+    try {
+      await api.generateChapter({
+        projectId,
+        chapterIndex: index,
+        chapterTitle: ch.title,
+        sections: ch.sections,
+        briefing: project.briefing,
+        type: project.type as ContentType,
+      });
+      setChapters(prev => {
+        const updated = prev.map((c, idx) => idx === index ? { ...c, status: 'completed' as ChapterStatus } : c);
+        const allDone = updated.every(c => c.status === 'completed');
+        if (allDone) {
+          api.updateProject(projectId, { status: 'completed' }).then(() => {
+            setIsDone(true);
+            setTimeout(() => onComplete(), 1500);
+          });
+        }
+        return updated;
+      });
+      addToast({ message: `"${ch.title}" regenerado com sucesso.`, type: 'success' });
+    } catch (err: any) {
+      setChapters(prev => prev.map((c, idx) => idx === index ? { ...c, status: 'error' } : c));
+      addToast({ message: `Falha ao regenerar "${ch.title}".`, type: 'error' });
+    } finally {
+      setRetryingIndex(null);
     }
   };
 
@@ -162,11 +199,25 @@ export const GenerationProgress: React.FC<GenerationProgressProps> = ({ projectI
                       : 'bg-white/[0.02] border-white/5'
                   }`}
                 >
-                  <div className="flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     {ch.status === 'completed' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
                     {ch.status === 'generating' && <Loader2 className="w-5 h-5 text-neon-cyan animate-spin" />}
-                    {ch.status === 'error' && <AlertCircle className="w-5 h-5 text-red-400" />}
                     {ch.status === 'pending' && <Circle className="w-5 h-5 text-white/20" />}
+                    {ch.status === 'error' && (
+                      <>
+                        <AlertCircle className="w-5 h-5 text-red-400" />
+                        <button
+                          onClick={() => retryChapter(i)}
+                          disabled={retryingIndex !== null}
+                          title="Tentar novamente"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-40"
+                        >
+                          {retryingIndex === i
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <RefreshCw className="w-3.5 h-3.5" />}
+                        </button>
+                      </>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium truncate ${

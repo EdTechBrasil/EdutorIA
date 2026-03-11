@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Project } from '../types';
+import { Project, ContentType } from '../types';
 import { api } from '../api';
 import { exportProjectToPdf } from '../utils/exportPdf';
-import { 
-  ArrowLeft, 
-  Save, 
-  Sparkles, 
-  Download, 
-  Share2, 
+import { useToast } from '../contexts/ToastContext';
+import {
+  ArrowLeft,
+  Save,
+  Sparkles,
   ChevronRight,
-  CheckCircle2,
-  Circle,
-  RefreshCw
+  RefreshCw,
+  Wand2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
@@ -23,12 +21,14 @@ interface ProjectEditorProps {
 }
 
 export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack }) => {
+  const { addToast } = useToast();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeChapterIndex, setActiveChapterIndex] = useState(0);
   const [editorContent, setEditorContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isRefining, setIsRefining] = useState(false);
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -50,6 +50,35 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
     fetchProject();
   }, [projectId, activeChapterIndex]);
 
+  const handleRefine = async () => {
+    if (!project || isRefining) return;
+    const chapter = project.outline?.chapters[activeChapterIndex];
+    if (!chapter) return;
+    setIsRefining(true);
+    try {
+      const { content } = await api.generateChapter({
+        projectId,
+        chapterIndex: activeChapterIndex,
+        chapterTitle: chapter.title,
+        sections: chapter.sections,
+        briefing: project.briefing,
+        type: project.type as ContentType,
+      });
+      setEditorContent(content);
+      // Persist updated content
+      const updatedOutline = { ...project.outline! };
+      updatedOutline.chapters[activeChapterIndex].content = content;
+      updatedOutline.chapters[activeChapterIndex].status = 'completed';
+      await api.updateProject(projectId, { outline: updatedOutline });
+      setProject({ ...project, outline: updatedOutline });
+      addToast({ message: 'Capítulo refinado com sucesso.', type: 'success' });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Erro ao refinar capítulo.', type: 'error' });
+    } finally {
+      setIsRefining(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!project) return;
     setIsSaving(true);
@@ -57,11 +86,11 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
       const updatedOutline = { ...project.outline! };
       updatedOutline.chapters[activeChapterIndex].content = editorContent;
       updatedOutline.chapters[activeChapterIndex].status = 'completed';
-      
       await api.updateProject(projectId, { outline: updatedOutline });
       setProject({ ...project, outline: updatedOutline });
-    } catch (error) {
-      console.error("Save error:", error);
+      addToast({ message: 'Alterações salvas.', type: 'success' });
+    } catch (err: any) {
+      addToast({ message: err.message || 'Erro ao salvar.', type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -106,8 +135,9 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
                 setIsExporting(true);
                 try {
                   await exportProjectToPdf(project);
-                } catch (e) {
-                  console.error('Export error:', e);
+                  addToast({ message: 'PDF exportado com sucesso.', type: 'success' });
+                } catch (e: any) {
+                  addToast({ message: e.message || 'Erro ao exportar PDF.', type: 'error' });
                 } finally {
                   setIsExporting(false);
                 }
@@ -181,9 +211,17 @@ export const ProjectEditor: React.FC<ProjectEditorProps> = ({ projectId, onBack 
                 <span className="text-[9px] font-mono tracking-widest text-white/20 uppercase mb-2 block">Editando Nodo</span>
                 <h2 className="text-4xl font-bold tracking-tight">{project.outline?.chapters[activeChapterIndex].title}</h2>
               </div>
-              <button className="group flex items-center gap-3 text-neon-cyan hover:text-white transition-colors">
-                <Sparkles className="w-5 h-5 group-hover:animate-pulse" />
-                <span className="text-[10px] font-mono tracking-widest uppercase">Refino Neural</span>
+              <button
+                onClick={handleRefine}
+                disabled={isRefining}
+                className="group flex items-center gap-3 px-5 py-2.5 rounded-xl border border-neon-cyan/20 text-neon-cyan hover:bg-neon-cyan/5 hover:border-neon-cyan/40 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isRefining
+                  ? <RefreshCw className="w-4 h-4 animate-spin" />
+                  : <Wand2 className="w-4 h-4 group-hover:animate-pulse" />}
+                <span className="text-[10px] font-mono tracking-widest uppercase">
+                  {isRefining ? 'Refinando...' : 'Refino Neural'}
+                </span>
               </button>
             </div>
 

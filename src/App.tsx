@@ -10,6 +10,7 @@ import { Wizard } from './components/Wizard';
 import { ProjectEditor } from './components/ProjectEditor';
 import { Admin } from './components/Admin';
 import { GenerationProgress } from './components/GenerationProgress';
+import { ToastProvider } from './contexts/ToastContext';
 import { Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -115,6 +116,7 @@ export default function App() {
   }
 
   return (
+    <ToastProvider>
     <AuthContext.Provider value={{ user, loading, logout, refreshUser }}>
       <Layout setView={setView} currentView={view}>
         <AnimatePresence mode="wait">
@@ -160,5 +162,6 @@ export default function App() {
         </AnimatePresence>
       </Layout>
     </AuthContext.Provider>
+    </ToastProvider>
   );
 }
